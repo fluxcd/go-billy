@@ -1,3 +1,6 @@
+//go:build !js
+// +build !js
+
 /*
 Copyright 2017 Go-Git authors.
 

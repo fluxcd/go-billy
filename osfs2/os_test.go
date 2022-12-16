@@ -1,3 +1,6 @@
+//go:build !js
+// +build !js
+
 /*
 Copyright 2022 The Flux authors
 
@@ -25,7 +28,7 @@ import (
 	"testing"
 
 	"github.com/go-git/go-billy/v5"
-	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega"
 )
 
 func TestOpen(t *testing.T) {
@@ -111,7 +114,7 @@ func TestOpen(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			g := NewWithT(t)
+			g := gomega.NewWithT(t)
 			dir := t.TempDir()
 			fs := New(dir)
 
@@ -126,12 +129,12 @@ func TestOpen(t *testing.T) {
 
 			fi, err := fs.Open(filename)
 			if tt.wantErr != "" {
-				g.Expect(err).To(HaveOccurred())
-				g.Expect(err.Error()).To(ContainSubstring(tt.wantErr))
-				g.Expect(fi).To(BeNil())
+				g.Expect(err).To(gomega.HaveOccurred())
+				g.Expect(err.Error()).To(gomega.ContainSubstring(tt.wantErr))
+				g.Expect(fi).To(gomega.BeNil())
 			} else {
-				g.Expect(err).To(BeNil())
-				g.Expect(fi).ToNot(BeNil())
+				g.Expect(err).To(gomega.BeNil())
+				g.Expect(fi).ToNot(gomega.BeNil())
 			}
 		})
 	}
@@ -189,7 +192,7 @@ func Test_Symlink(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			g := NewWithT(t)
+			g := gomega.NewWithT(t)
 			dir := t.TempDir()
 			fs := New(dir)
 
@@ -200,77 +203,77 @@ func Test_Symlink(t *testing.T) {
 			// Even if CWD is changed outside of fs the instance,
 			// the current working dir must still be observed.
 			err := os.Chdir(os.TempDir())
-			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(err).ToNot(gomega.HaveOccurred())
 
 			link := filepath.Join(dir, tt.link)
 
 			diBefore, _ := os.Lstat(filepath.Dir(link))
 
 			err = fs.Symlink(tt.target, tt.link)
-			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(err).ToNot(gomega.HaveOccurred())
 
 			fi, err := os.Lstat(link)
 			if tt.wantStatErr != "" {
-				g.Expect(err).To(HaveOccurred())
-				g.Expect(err.Error()).To(ContainSubstring(tt.wantStatErr))
+				g.Expect(err).To(gomega.HaveOccurred())
+				g.Expect(err.Error()).To(gomega.ContainSubstring(tt.wantStatErr))
 			} else {
-				g.Expect(err).ToNot(HaveOccurred())
-				g.Expect(fi).ToNot(BeNil())
+				g.Expect(err).ToNot(gomega.HaveOccurred())
+				g.Expect(fi).ToNot(gomega.BeNil())
 			}
 
 			got, err := os.Readlink(link)
-			g.Expect(err).ToNot(HaveOccurred())
-			g.Expect(got).To(Equal(tt.target))
+			g.Expect(err).ToNot(gomega.HaveOccurred())
+			g.Expect(got).To(gomega.Equal(tt.target))
 
 			diAfter, err := os.Lstat(filepath.Dir(link))
-			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(err).ToNot(gomega.HaveOccurred())
 
 			if diBefore != nil {
-				g.Expect(diAfter.Mode()).To(Equal(diBefore.Mode()))
+				g.Expect(diAfter.Mode()).To(gomega.Equal(diBefore.Mode()))
 			}
 		})
 	}
 }
 
 func TestTempFile(t *testing.T) {
-	g := NewWithT(t)
+	g := gomega.NewWithT(t)
 	dir := t.TempDir()
 	fs := New(dir)
 
 	f, err := fs.TempFile("", "prefix")
-	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(f).ToNot(BeNil())
-	g.Expect(f.Name()).To(ContainSubstring(os.TempDir()))
+	g.Expect(err).ToNot(gomega.HaveOccurred())
+	g.Expect(f).ToNot(gomega.BeNil())
+	g.Expect(f.Name()).To(gomega.ContainSubstring(os.TempDir()))
 
 	f, err = fs.TempFile("/above/cwd", "prefix")
-	g.Expect(err).To(HaveOccurred())
-	g.Expect(err.Error()).To(ContainSubstring(fmt.Sprint(dir, "/above/cwd/prefix")))
-	g.Expect(f).To(BeNil())
+	g.Expect(err).To(gomega.HaveOccurred())
+	g.Expect(err.Error()).To(gomega.ContainSubstring(fmt.Sprint(dir, "/above/cwd/prefix")))
+	g.Expect(f).To(gomega.BeNil())
 
 	f, err = fs.TempFile(os.TempDir(), "prefix")
-	g.Expect(err).To(HaveOccurred())
-	g.Expect(err.Error()).To(ContainSubstring(filepath.Join(dir, os.TempDir(), "prefix")))
-	g.Expect(f).To(BeNil())
+	g.Expect(err).To(gomega.HaveOccurred())
+	g.Expect(err.Error()).To(gomega.ContainSubstring(filepath.Join(dir, os.TempDir(), "prefix")))
+	g.Expect(f).To(gomega.BeNil())
 }
 
 func TestChroot(t *testing.T) {
-	g := NewWithT(t)
+	g := gomega.NewWithT(t)
 	tmp := t.TempDir()
 	fs := New(tmp)
 
 	f, err := fs.Chroot("test")
-	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(f).ToNot(BeNil())
-	g.Expect(f.Root()).To(Equal(filepath.Join(tmp, "test")))
+	g.Expect(err).ToNot(gomega.HaveOccurred())
+	g.Expect(f).ToNot(gomega.BeNil())
+	g.Expect(f.Root()).To(gomega.Equal(filepath.Join(tmp, "test")))
 }
 
 func TestRoot(t *testing.T) {
-	g := NewWithT(t)
+	g := gomega.NewWithT(t)
 	dir := t.TempDir()
 	fs := New(dir)
 
 	root := fs.Root()
-	g.Expect(root).To(Equal(dir))
+	g.Expect(root).To(gomega.Equal(dir))
 }
 
 func TestReadLink(t *testing.T) {
@@ -367,7 +370,7 @@ func TestReadLink(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			g := NewWithT(t)
+			g := gomega.NewWithT(t)
 			dir := t.TempDir()
 			fs := New(dir)
 
@@ -387,12 +390,12 @@ func TestReadLink(t *testing.T) {
 
 			got, err := fs.Readlink(filename)
 			if tt.wantErr != "" {
-				g.Expect(err).To(HaveOccurred())
-				g.Expect(err.Error()).To(ContainSubstring(tt.wantErr))
-				g.Expect(got).To(BeEmpty())
+				g.Expect(err).To(gomega.HaveOccurred())
+				g.Expect(err.Error()).To(gomega.ContainSubstring(tt.wantErr))
+				g.Expect(got).To(gomega.BeEmpty())
 			} else {
-				g.Expect(err).To(BeNil())
-				g.Expect(got).To(Equal(expected))
+				g.Expect(err).To(gomega.BeNil())
+				g.Expect(got).To(gomega.Equal(expected))
 			}
 		})
 	}
@@ -509,7 +512,7 @@ func TestLstat(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			g := NewWithT(t)
+			g := gomega.NewWithT(t)
 			dir := t.TempDir()
 			fs := New(dir)
 
@@ -523,13 +526,13 @@ func TestLstat(t *testing.T) {
 			}
 			fi, err := fs.Lstat(filename)
 			if tt.wantErr != "" {
-				g.Expect(err).To(HaveOccurred())
-				g.Expect(err.Error()).To(ContainSubstring(tt.wantErr))
-				g.Expect(fi).To(BeNil())
+				g.Expect(err).To(gomega.HaveOccurred())
+				g.Expect(err.Error()).To(gomega.ContainSubstring(tt.wantErr))
+				g.Expect(fi).To(gomega.BeNil())
 			} else {
-				g.Expect(err).To(BeNil())
-				g.Expect(fi).ToNot(BeNil())
-				g.Expect(fi.Name()).To(Equal(filepath.Base(tt.filename)))
+				g.Expect(err).To(gomega.BeNil())
+				g.Expect(fi).ToNot(gomega.BeNil())
+				g.Expect(fi.Name()).To(gomega.Equal(filepath.Base(tt.filename)))
 			}
 		})
 	}
@@ -612,7 +615,7 @@ func TestStat(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			g := NewWithT(t)
+			g := gomega.NewWithT(t)
 			dir := t.TempDir()
 			fs := New(dir)
 
@@ -627,12 +630,12 @@ func TestStat(t *testing.T) {
 
 			fi, err := fs.Stat(filename)
 			if tt.wantErr != "" {
-				g.Expect(err).To(HaveOccurred())
-				g.Expect(err.Error()).To(ContainSubstring(tt.wantErr))
-				g.Expect(fi).To(BeNil())
+				g.Expect(err).To(gomega.HaveOccurred())
+				g.Expect(err.Error()).To(gomega.ContainSubstring(tt.wantErr))
+				g.Expect(fi).To(gomega.BeNil())
 			} else {
-				g.Expect(err).To(BeNil())
-				g.Expect(fi).ToNot(BeNil())
+				g.Expect(err).To(gomega.BeNil())
+				g.Expect(fi).ToNot(gomega.BeNil())
 			}
 		})
 	}
@@ -725,7 +728,7 @@ func TestRemove(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			g := NewWithT(t)
+			g := gomega.NewWithT(t)
 			dir := t.TempDir()
 			fs := New(dir)
 
@@ -740,10 +743,10 @@ func TestRemove(t *testing.T) {
 
 			err := fs.Remove(filename)
 			if tt.wantErr != "" {
-				g.Expect(err).To(HaveOccurred())
-				g.Expect(err.Error()).To(ContainSubstring(tt.wantErr))
+				g.Expect(err).To(gomega.HaveOccurred())
+				g.Expect(err.Error()).To(gomega.ContainSubstring(tt.wantErr))
 			} else {
-				g.Expect(err).To(BeNil())
+				g.Expect(err).To(gomega.BeNil())
 			}
 		})
 	}
@@ -816,7 +819,7 @@ func TestRemoveAll(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			g := NewWithT(t)
+			g := gomega.NewWithT(t)
 			dir := t.TempDir()
 			fs := New(dir).(*OS)
 
@@ -831,10 +834,10 @@ func TestRemoveAll(t *testing.T) {
 
 			err := fs.RemoveAll(filename)
 			if tt.wantErr != "" {
-				g.Expect(err).To(HaveOccurred())
-				g.Expect(err.Error()).To(ContainSubstring(tt.wantErr))
+				g.Expect(err).To(gomega.HaveOccurred())
+				g.Expect(err.Error()).To(gomega.ContainSubstring(tt.wantErr))
 			} else {
-				g.Expect(err).To(BeNil())
+				g.Expect(err).To(gomega.BeNil())
 			}
 		})
 	}
@@ -868,11 +871,11 @@ func TestJoin(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.wanted, func(t *testing.T) {
-			g := NewWithT(t)
+			g := gomega.NewWithT(t)
 			fs := New(t.TempDir())
 
 			got := fs.Join(tt.elems...)
-			g.Expect(got).To(Equal(tt.wanted))
+			g.Expect(got).To(gomega.Equal(tt.wanted))
 		})
 	}
 }
@@ -1009,7 +1012,7 @@ func TestAbs(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			g := NewWithT(t)
+			g := gomega.NewWithT(t)
 			cwd := tt.cwd
 			if cwd == "" {
 				cwd = t.TempDir()
@@ -1032,49 +1035,49 @@ func TestAbs(t *testing.T) {
 
 			got, err := fs.abs(filename)
 			if tt.wantErr != "" {
-				g.Expect(err).To(HaveOccurred())
-				g.Expect(err.Error()).To(ContainSubstring(tt.wantErr))
+				g.Expect(err).To(gomega.HaveOccurred())
+				g.Expect(err.Error()).To(gomega.ContainSubstring(tt.wantErr))
 			} else {
-				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(err).ToNot(gomega.HaveOccurred())
 			}
 
-			g.Expect(got).To(Equal(expected))
+			g.Expect(got).To(gomega.Equal(expected))
 		})
 	}
 }
 
 func TestReadDir(t *testing.T) {
-	g := NewWithT(t)
+	g := gomega.NewWithT(t)
 	dir := t.TempDir()
 	fs := New(dir)
 
 	f, err := os.Create(filepath.Join(dir, "file1"))
-	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(f).ToNot(BeNil())
+	g.Expect(err).ToNot(gomega.HaveOccurred())
+	g.Expect(f).ToNot(gomega.BeNil())
 
 	f, err = os.Create(filepath.Join(dir, "file2"))
-	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(f).ToNot(BeNil())
+	g.Expect(err).ToNot(gomega.HaveOccurred())
+	g.Expect(f).ToNot(gomega.BeNil())
 
 	dirs, err := fs.ReadDir(dir)
-	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(dirs).ToNot(BeNil())
-	g.Expect(dirs).To(HaveLen(2))
+	g.Expect(err).ToNot(gomega.HaveOccurred())
+	g.Expect(dirs).ToNot(gomega.BeNil())
+	g.Expect(dirs).To(gomega.HaveLen(2))
 
 	dirs, err = fs.ReadDir(".")
-	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(dirs).ToNot(BeNil())
-	g.Expect(dirs).To(HaveLen(2))
+	g.Expect(err).ToNot(gomega.HaveOccurred())
+	g.Expect(dirs).ToNot(gomega.BeNil())
+	g.Expect(dirs).To(gomega.HaveLen(2))
 
 	os.Symlink("/some/path/outside/cwd", filepath.Join(dir, "symlink"))
 	dirs, err = fs.ReadDir("symlink")
-	g.Expect(err).To(HaveOccurred())
-	g.Expect(err.Error()).To(ContainSubstring(dir + "/some/path/outside/cwd: no such file or directory"))
-	g.Expect(dirs).To(BeNil())
+	g.Expect(err).To(gomega.HaveOccurred())
+	g.Expect(err.Error()).To(gomega.ContainSubstring(dir + "/some/path/outside/cwd: no such file or directory"))
+	g.Expect(dirs).To(gomega.BeNil())
 }
 
 func TestMkdirAll(t *testing.T) {
-	g := NewWithT(t)
+	g := gomega.NewWithT(t)
 	root := t.TempDir()
 	cwd := filepath.Join(root, "cwd")
 	target := "abc"
@@ -1084,25 +1087,25 @@ func TestMkdirAll(t *testing.T) {
 	// Even if CWD is changed outside of fs the instance,
 	// the current working dir must still be observed.
 	err := os.Chdir(os.TempDir())
-	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(err).ToNot(gomega.HaveOccurred())
 
 	err = fs.MkdirAll(target, 0o700)
-	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(err).ToNot(gomega.HaveOccurred())
 
 	fi, err := os.Stat(targetAbs)
-	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(fi).ToNot(BeNil())
+	g.Expect(err).ToNot(gomega.HaveOccurred())
+	g.Expect(fi).ToNot(gomega.BeNil())
 
 	os.Mkdir(filepath.Join(root, "outside"), 0o700)
 	os.Symlink(filepath.Join(root, "outside"), filepath.Join(cwd, "symlink"))
 	err = fs.MkdirAll(filepath.Join(cwd, "symlink/new-dir"), 0o700)
-	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(err).ToNot(gomega.HaveOccurred())
 
 	mustExist(filepath.Join(cwd, filepath.Join(cwd, "../outside/new-dir")))
 }
 
 func TestRename(t *testing.T) {
-	g := NewWithT(t)
+	g := gomega.NewWithT(t)
 	dir := t.TempDir()
 	fs := New(dir)
 
@@ -1112,25 +1115,25 @@ func TestRename(t *testing.T) {
 	// Even if CWD is changed outside of fs the instance,
 	// the current working dir must still be observed.
 	err := os.Chdir(os.TempDir())
-	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(err).ToNot(gomega.HaveOccurred())
 
 	_, err = fs.Create(oldFile)
-	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(err).ToNot(gomega.HaveOccurred())
 
 	err = fs.Rename(oldFile, newFile)
-	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(err).ToNot(gomega.HaveOccurred())
 
 	fi, err := os.Stat(filepath.Join(dir, newFile))
-	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(fi).ToNot(BeNil())
+	g.Expect(err).ToNot(gomega.HaveOccurred())
+	g.Expect(fi).ToNot(gomega.BeNil())
 
 	err = fs.Rename("/tmp/outside/cwd/file1", newFile)
-	g.Expect(err).To(HaveOccurred())
-	g.Expect(err.Error()).To(ContainSubstring("newdir/newfile: no such file or directory"))
+	g.Expect(err).To(gomega.HaveOccurred())
+	g.Expect(err.Error()).To(gomega.ContainSubstring("newdir/newfile: no such file or directory"))
 
 	err = fs.Rename(oldFile, "/tmp/outside/cwd/file2")
-	g.Expect(err).To(HaveOccurred())
-	g.Expect(err.Error()).To(ContainSubstring("outside/cwd/file2: no such file or directory"))
+	g.Expect(err).To(gomega.HaveOccurred())
+	g.Expect(err.Error()).To(gomega.ContainSubstring("outside/cwd/file2: no such file or directory"))
 }
 
 func mustExist(filename string) {
