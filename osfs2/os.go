@@ -219,7 +219,8 @@ func (fs *OS) Readlink(link string) (string, error) {
 	return os.Readlink(link)
 }
 
-// Chroot returns a new OS filesystem, with working directory set to path.
+// Chroot returns a new OS filesystem, with the working dir set to the
+// result of joining the provided path with the underlying working dir.
 func (fs *OS) Chroot(path string) (billy.Filesystem, error) {
 	joined, err := util.SecureJoin(fs.workingDir, path)
 	if err != nil {
@@ -260,9 +261,9 @@ func (fs *OS) createDir(fullpath string) error {
 // symlink.
 func (fs *OS) abs(filename string) (string, error) {
 	if filename == fs.workingDir {
-		filename = "/"
-	} else if strings.HasPrefix(filename, fs.workingDir+string(filepath.Separator)) {
-		filename = strings.TrimPrefix(filename, fs.workingDir+string(filepath.Separator))
+		filename = string(filepath.Separator)
+	} else if cw := fs.workingDir + string(filepath.Separator); strings.HasPrefix(filename, cw) {
+		filename = strings.TrimPrefix(filename, cw)
 	}
 	return util.SecureJoin(fs.workingDir, filename)
 }

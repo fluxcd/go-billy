@@ -13,6 +13,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"runtime"
 	"syscall"
 	"testing"
 )
@@ -61,23 +62,29 @@ func TestSymlink(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	symlink(t, "somepath", filepath.Join(dir, "etc"))
-	symlink(t, "../../../../../../../../../../../../../etc", filepath.Join(dir, "etclink"))
-	symlink(t, "/../../../../../../../../../../../../../etc/passwd", filepath.Join(dir, "passwd"))
+	symlink(t, filepath.FromSlash("../../../../../../../../../../../../../etc"), filepath.Join(dir, "etclink"))
+	symlink(t, filepath.FromSlash("/../../../../../../../../../../../../../etc/passwd"), filepath.Join(dir, "passwd"))
+
+	rootOrVol := string(filepath.Separator)
+	if vol := filepath.VolumeName(dir); vol != "" {
+		rootOrVol = vol + rootOrVol
+	}
 
 	for _, test := range []struct {
 		root, unsafe string
 		expected     string
 	}{
 		// Make sure that expansion with a root of '/' proceeds in the expected fashion.
-		{"/", filepath.Join(dir, "passwd"), "/etc/passwd"},
-		{"/", filepath.Join(dir, "etclink"), "/etc"},
-		{"/", filepath.Join(dir, "etc"), filepath.Join(dir, "somepath")},
+		{rootOrVol, filepath.Join(dir, "passwd"), filepath.Join(rootOrVol, "etc", "passwd")},
+		{rootOrVol, filepath.Join(dir, "etclink"), filepath.Join(rootOrVol, "etc")},
+
+		{rootOrVol, filepath.Join(dir, "etc"), filepath.Join(dir, "somepath")},
 		// Now test scoped expansion.
 		{dir, "passwd", filepath.Join(dir, "somepath", "passwd")},
 		{dir, "etclink", filepath.Join(dir, "somepath")},
 		{dir, "etc", filepath.Join(dir, "somepath")},
-		{dir, "etc/test", filepath.Join(dir, "somepath", "test")},
-		{dir, "etc/test/..", filepath.Join(dir, "somepath")},
+		{dir, filepath.FromSlash("etc/test"), filepath.Join(dir, "somepath", "test")},
+		{dir, filepath.FromSlash("etc/test/.."), filepath.Join(dir, "somepath")},
 	} {
 		got, err := SecureJoin(test.root, test.unsafe)
 		if err != nil {
@@ -152,23 +159,23 @@ func TestNonLexical(t *testing.T) {
 
 	os.MkdirAll(filepath.Join(dir, "subdir"), 0755)
 	os.MkdirAll(filepath.Join(dir, "cousinparent", "cousin"), 0755)
-	symlink(t, "../cousinparent/cousin", filepath.Join(dir, "subdir", "link"))
-	symlink(t, "/../cousinparent/cousin", filepath.Join(dir, "subdir", "link2"))
-	symlink(t, "/../../../../../../../../../../../../../../../../cousinparent/cousin", filepath.Join(dir, "subdir", "link3"))
+	symlink(t, filepath.FromSlash("../cousinparent/cousin"), filepath.Join(dir, "subdir", "link"))
+	symlink(t, filepath.FromSlash("/../cousinparent/cousin"), filepath.Join(dir, "subdir", "link2"))
+	symlink(t, filepath.FromSlash("/../../../../../../../../../../../../../../../../cousinparent/cousin"), filepath.Join(dir, "subdir", "link3"))
 
 	for _, test := range []struct {
 		root, unsafe string
 		expected     string
 	}{
 		{dir, "subdir", filepath.Join(dir, "subdir")},
-		{dir, "subdir/link/test", filepath.Join(dir, "cousinparent", "cousin", "test")},
-		{dir, "subdir/link2/test", filepath.Join(dir, "cousinparent", "cousin", "test")},
-		{dir, "subdir/link3/test", filepath.Join(dir, "cousinparent", "cousin", "test")},
-		{dir, "subdir/../test", filepath.Join(dir, "test")},
+		{dir, filepath.FromSlash("subdir/link/test"), filepath.Join(dir, "cousinparent", "cousin", "test")},
+		{dir, filepath.FromSlash("subdir/link2/test"), filepath.Join(dir, "cousinparent", "cousin", "test")},
+		{dir, filepath.FromSlash("subdir/link3/test"), filepath.Join(dir, "cousinparent", "cousin", "test")},
+		{dir, filepath.FromSlash("subdir/../test"), filepath.Join(dir, "test")},
 		// This is the divergence from a simple filepath.Clean implementation.
-		{dir, "subdir/link/../test", filepath.Join(dir, "cousinparent", "test")},
-		{dir, "subdir/link2/../test", filepath.Join(dir, "cousinparent", "test")},
-		{dir, "subdir/link3/../test", filepath.Join(dir, "cousinparent", "test")},
+		{dir, filepath.FromSlash("subdir/link/../test"), filepath.Join(dir, "cousinparent", "test")},
+		{dir, filepath.FromSlash("subdir/link2/../test"), filepath.Join(dir, "cousinparent", "test")},
+		{dir, filepath.FromSlash("subdir/link3/../test"), filepath.Join(dir, "cousinparent", "test")},
 	} {
 		got, err := SecureJoin(test.root, test.unsafe)
 		if err != nil {
@@ -200,19 +207,30 @@ func TestSymlinkLoop(t *testing.T) {
 	symlink(t, "/../../../../../../../../../../../../../../../../self", filepath.Join(dir, "self"))
 
 	for _, test := range []struct {
-		root, unsafe string
+		root, unsafe  string
+		skipOnWindows bool
 	}{
-		{dir, "subdir/link"},
-		{dir, "path"},
-		{dir, "../../path"},
-		{dir, "subdir/link/../.."},
-		{dir, "../../../../../../../../../../../../../../../../subdir/link/../../../../../../../../../../../../../../../.."},
-		{dir, "self"},
-		{dir, "self/.."},
-		{dir, "/../../../../../../../../../../../../../../../../self/.."},
-		{dir, "/self/././.."},
+		{dir, "subdir/link", false},
+		{dir, "path", false},
+		{dir, "../../path", false},
+		{dir, "subdir/link/../..", true},
+		{dir, "../../../../../../../../../../../../../../../../subdir/link/../../../../../../../../../../../../../../../..", true},
+		{dir, "self", false},
+		{dir, "self/..", true},
+		{dir, "/../../../../../../../../../../../../../../../../self/..", true},
+		{dir, "/self/././..", true},
 	} {
 		got, err := SecureJoin(test.root, test.unsafe)
+		// On Windows, some of these tests will not lead to a symlink loop.
+		// Instead, the path will be normalized to a safe location descending
+		// from the root directory.
+		if test.skipOnWindows && runtime.GOOS == "windows" {
+			if err != nil || got != test.root {
+				t.Errorf("securejoin(%q, %q): expected %[1]q got %v & %q", test.root, test.unsafe, test.root, err, got)
+			}
+			continue
+		}
+
 		if !errors.Is(err, syscall.ELOOP) {
 			t.Errorf("securejoin(%q, %q): expected ELOOP, got %v & %q", test.root, test.unsafe, err, got)
 			continue
@@ -239,9 +257,9 @@ func TestEnotdir(t *testing.T) {
 	for _, test := range []struct {
 		root, unsafe string
 	}{
-		{dir, "subdir/link"},
+		{dir, filepath.FromSlash("subdir/link")},
 		{dir, "notdir"},
-		{dir, "notdir/child"},
+		{dir, filepath.FromSlash("notdir/child")},
 	} {
 		_, err := SecureJoin(test.root, test.unsafe)
 		if err != nil {
@@ -297,23 +315,23 @@ func TestSecureJoinVFS(t *testing.T) {
 
 	os.MkdirAll(filepath.Join(dir, "subdir"), 0755)
 	os.MkdirAll(filepath.Join(dir, "cousinparent", "cousin"), 0755)
-	symlink(t, "../cousinparent/cousin", filepath.Join(dir, "subdir", "link"))
-	symlink(t, "/../cousinparent/cousin", filepath.Join(dir, "subdir", "link2"))
-	symlink(t, "/../../../../../../../../../../../../../../../../cousinparent/cousin", filepath.Join(dir, "subdir", "link3"))
+	symlink(t, filepath.FromSlash("../cousinparent/cousin"), filepath.Join(dir, "subdir", "link"))
+	symlink(t, filepath.FromSlash("/../cousinparent/cousin"), filepath.Join(dir, "subdir", "link2"))
+	symlink(t, filepath.FromSlash("/../../../../../../../../../../../../../../../../cousinparent/cousin"), filepath.Join(dir, "subdir", "link3"))
 
 	for _, test := range []struct {
 		root, unsafe string
 		expected     string
 	}{
 		{dir, "subdir", filepath.Join(dir, "subdir")},
-		{dir, "subdir/link/test", filepath.Join(dir, "cousinparent", "cousin", "test")},
-		{dir, "subdir/link2/test", filepath.Join(dir, "cousinparent", "cousin", "test")},
-		{dir, "subdir/link3/test", filepath.Join(dir, "cousinparent", "cousin", "test")},
-		{dir, "subdir/../test", filepath.Join(dir, "test")},
+		{dir, filepath.FromSlash("subdir/link/test"), filepath.Join(dir, "cousinparent", "cousin", "test")},
+		{dir, filepath.FromSlash("subdir/link2/test"), filepath.Join(dir, "cousinparent", "cousin", "test")},
+		{dir, filepath.FromSlash("subdir/link3/test"), filepath.Join(dir, "cousinparent", "cousin", "test")},
+		{dir, filepath.FromSlash("subdir/../test"), filepath.Join(dir, "test")},
 		// This is the divergence from a simple filepath.Clean implementation.
-		{dir, "subdir/link/../test", filepath.Join(dir, "cousinparent", "test")},
-		{dir, "subdir/link2/../test", filepath.Join(dir, "cousinparent", "test")},
-		{dir, "subdir/link3/../test", filepath.Join(dir, "cousinparent", "test")},
+		{dir, filepath.FromSlash("subdir/link/../test"), filepath.Join(dir, "cousinparent", "test")},
+		{dir, filepath.FromSlash("subdir/link2/../test"), filepath.Join(dir, "cousinparent", "test")},
+		{dir, filepath.FromSlash("subdir/link3/../test"), filepath.Join(dir, "cousinparent", "test")},
 	} {
 		var nLstat, nReadlink int
 		mock := mockVFS{
@@ -356,7 +374,7 @@ func TestSecureJoinVFSErrors(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	// Make a link.
-	symlink(t, "../../../../../../../../../../../../../../../../path", filepath.Join(dir, "link"))
+	symlink(t, filepath.FromSlash("../../../../../../../../../../../../../../../../path"), filepath.Join(dir, "link"))
 
 	// Define some fake mock functions.
 	lstatFailFn := func(path string) (os.FileInfo, error) { return nil, lstatErr }

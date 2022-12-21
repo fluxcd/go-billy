@@ -24,7 +24,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"syscall"
+	"strings"
 	"testing"
 
 	"github.com/go-git/go-billy/v5"
@@ -79,7 +79,7 @@ func TestOpen(t *testing.T) {
 				return New(dir)
 			},
 			filename: "/some/path/outside/cwd",
-			wantErr:  "/some/path/outside/cwd: no such file or directory",
+			wantErr:  notFoundError(),
 		},
 		{
 			name: "symlink: same dir",
@@ -99,7 +99,7 @@ func TestOpen(t *testing.T) {
 			},
 			filename: "symlink",
 			makeAbs:  true,
-			wantErr:  "/outside/cwd: no such file or directory",
+			wantErr:  notFoundError(),
 		},
 		{
 			name: "symlink: abs outside cwd",
@@ -109,7 +109,7 @@ func TestOpen(t *testing.T) {
 			},
 			filename: "symlink",
 			makeAbs:  true,
-			wantErr:  "/some/path/outside/cwd: no such file or directory",
+			wantErr:  notFoundError(),
 		},
 	}
 	for _, tt := range tests {
@@ -135,18 +135,18 @@ func TestOpen(t *testing.T) {
 			} else {
 				g.Expect(err).To(gomega.BeNil())
 				g.Expect(fi).ToNot(gomega.BeNil())
+				g.Expect(fi.Close()).To(gomega.Succeed())
 			}
 		})
 	}
 }
 
 func Test_Symlink(t *testing.T) {
-	if runtime.GOOS == "linux" {
-		// The umask value set at OS level can impact this test, so
-		// it is set to 0 during the duration of this test and then
-		// reverted back to the original value.
-		defer syscall.Umask(syscall.Umask(0))
-	}
+	// The umask value set at OS level can impact this test, so
+	// it is set to 0 during the duration of this test and then
+	// reverted back to the original value.
+	// Outside of linux this is a no-op.
+	defer umask(0)()
 
 	tests := []struct {
 		name        string
@@ -158,27 +158,27 @@ func Test_Symlink(t *testing.T) {
 		{
 			name:   "link to abs valid target",
 			link:   "symlink",
-			target: "/etc/passwd",
+			target: filepath.FromSlash("/etc/passwd"),
 		},
 		{
 			name:   "link to abs inexistent target",
 			link:   "symlink",
-			target: "/some/random/path",
+			target: filepath.FromSlash("/some/random/path"),
 		},
 		{
 			name:   "link to rel valid target",
 			link:   "symlink",
-			target: "../../../../../../../../../etc/passwd",
+			target: filepath.FromSlash("../../../../../../../../../etc/passwd"),
 		},
 		{
 			name:   "link to rel inexistent target",
 			link:   "symlink",
-			target: "../../../some/random/path",
+			target: filepath.FromSlash("../../../some/random/path"),
 		},
 		{
 			name:   "auto create dir",
 			link:   "new-dir/symlink",
-			target: "../../../some/random/path",
+			target: filepath.FromSlash("../../../some/random/path"),
 		},
 		{
 			name: "keep dir filemode if exists",
@@ -187,7 +187,7 @@ func Test_Symlink(t *testing.T) {
 				os.Mkdir(filepath.Join(dir, "new-dir"), 0o701)
 				return New(dir)
 			},
-			target: "../../../some/random/path",
+			target: filepath.FromSlash("../../../some/random/path"),
 		},
 	}
 	for _, tt := range tests {
@@ -244,15 +244,22 @@ func TestTempFile(t *testing.T) {
 	g.Expect(err).ToNot(gomega.HaveOccurred())
 	g.Expect(f).ToNot(gomega.BeNil())
 	g.Expect(f.Name()).To(gomega.ContainSubstring(os.TempDir()))
+	g.Expect(f.Close()).ToNot(gomega.HaveOccurred())
 
 	f, err = fs.TempFile("/above/cwd", "prefix")
 	g.Expect(err).To(gomega.HaveOccurred())
-	g.Expect(err.Error()).To(gomega.ContainSubstring(fmt.Sprint(dir, "/above/cwd/prefix")))
+	g.Expect(err.Error()).To(gomega.ContainSubstring(fmt.Sprint(dir, filepath.FromSlash("/above/cwd/prefix"))))
 	g.Expect(f).To(gomega.BeNil())
 
-	f, err = fs.TempFile(os.TempDir(), "prefix")
+	tempDir := os.TempDir()
+	// For windows, volume name must be removed.
+	if v := filepath.VolumeName(tempDir); v != "" {
+		tempDir = strings.TrimPrefix(tempDir, v)
+	}
+
+	f, err = fs.TempFile(tempDir, "prefix")
 	g.Expect(err).To(gomega.HaveOccurred())
-	g.Expect(err.Error()).To(gomega.ContainSubstring(filepath.Join(dir, os.TempDir(), "prefix")))
+	g.Expect(err.Error()).To(gomega.ContainSubstring(filepath.Join(dir, tempDir, "prefix")))
 	g.Expect(f).To(gomega.BeNil())
 }
 
@@ -293,7 +300,7 @@ func TestReadLink(t *testing.T) {
 				return New(dir)
 			},
 			filename: "symlink",
-			expected: "/etc/passwd",
+			expected: filepath.FromSlash("/etc/passwd"),
 		},
 		{
 			name:     "file: rel pointing to abs above cwd",
@@ -308,7 +315,7 @@ func TestReadLink(t *testing.T) {
 			},
 			filename: "symlink",
 			makeAbs:  true,
-			expected: "/etc/passwd",
+			expected: filepath.FromSlash("/etc/passwd"),
 		},
 		{
 			name: "symlink: dir pointing outside cwd",
@@ -344,7 +351,7 @@ func TestReadLink(t *testing.T) {
 				return New(cwd)
 			},
 			filename:        "symlink-file",
-			expected:        "cwd-target/file",
+			expected:        filepath.Join("cwd-target/file"),
 			makeExpectedAbs: true,
 		},
 		{
@@ -553,7 +560,7 @@ func TestStat(t *testing.T) {
 				return New(dir)
 			},
 			filename: "symlink",
-			wantErr:  "/001/etc/passwd: no such file or directory",
+			wantErr:  notFoundError(),
 		},
 		{
 			name: "rel symlink: pointing to rel path above cwd",
@@ -562,7 +569,7 @@ func TestStat(t *testing.T) {
 				return New(dir)
 			},
 			filename: "symlink",
-			wantErr:  "/001/etc/passwd: no such file or directory",
+			wantErr:  notFoundError(),
 		},
 
 		{
@@ -573,7 +580,7 @@ func TestStat(t *testing.T) {
 			},
 			filename: "symlink",
 			makeAbs:  true,
-			wantErr:  "/001/etc/passwd: no such file or directory",
+			wantErr:  notFoundError(),
 		},
 		{
 			name: "abs symlink: pointing to rel outside cwd",
@@ -583,17 +590,17 @@ func TestStat(t *testing.T) {
 			},
 			filename: "symlink",
 			makeAbs:  false,
-			wantErr:  "/001/etc/passwd: no such file or directory",
+			wantErr:  notFoundError(),
 		},
 		{
 			name:     "path: rel pointing to abs above cwd",
 			filename: "../../file",
-			wantErr:  "/001/file: no such file or directory",
+			wantErr:  notFoundError(),
 		},
 		{
 			name:     "path: abs pointing outside cwd",
 			filename: "/etc/passwd",
-			wantErr:  "/001/etc/passwd: no such file or directory",
+			wantErr:  notFoundError(),
 		},
 		{
 			name: "rel file",
@@ -652,20 +659,12 @@ func TestRemove(t *testing.T) {
 		{
 			name:     "path: rel pointing outside cwd w forward slash",
 			filename: "/some/path/outside/cwd",
-			wantErr:  "/001/some/path/outside/cwd: no such file or directory",
+			wantErr:  notFoundError(),
 		},
 		{
 			name:     "path: rel pointing outside cwd",
 			filename: "../../../../path/outside/cwd",
-			wantErr:  "/001/path/outside/cwd: no such file or directory",
-		},
-		{
-			name: "parent with children",
-			before: func(dir string) billy.Filesystem {
-				os.MkdirAll(filepath.Join(dir, "parent/children"), 0o600)
-				return New(dir)
-			},
-			filename: "parent",
+			wantErr:  notFoundError(),
 		},
 		{
 			name: "inexistent dir",
@@ -673,7 +672,7 @@ func TestRemove(t *testing.T) {
 				return New(dir)
 			},
 			filename: "inexistent",
-			wantErr:  "inexistent: no such file or directory",
+			wantErr:  notFoundError(),
 		},
 		{
 			name: "same dir file",
@@ -723,7 +722,7 @@ func TestRemove(t *testing.T) {
 				return New(cwd)
 			},
 			filename: "current-dir/remove-abs-symlink",
-			wantErr:  "/001/current-dir/current-dir/remove-abs-symlink: no such file or directory",
+			wantErr:  notFoundError(),
 		},
 	}
 	for _, tt := range tests {
@@ -854,19 +853,19 @@ func TestJoin(t *testing.T) {
 		},
 		{
 			elems:  []string{"/a", "b", "c"},
-			wanted: "/a/b/c",
+			wanted: filepath.FromSlash("/a/b/c"),
 		},
 		{
 			elems:  []string{"/a", "b/c"},
-			wanted: "/a/b/c",
+			wanted: filepath.FromSlash("/a/b/c"),
 		},
 		{
 			elems:  []string{"/a", ""},
-			wanted: "/a",
+			wanted: filepath.FromSlash("/a"),
 		},
 		{
 			elems:  []string{"/a", "/", "b"},
-			wanted: "/a/b",
+			wanted: filepath.FromSlash("/a/b"),
 		},
 	}
 	for _, tt := range tests {
@@ -895,43 +894,43 @@ func TestAbs(t *testing.T) {
 			name:     "path: same dir rel file",
 			cwd:      "/working/dir",
 			filename: "./file",
-			expected: "/working/dir/file",
+			expected: filepath.FromSlash("/working/dir/file"),
 		},
 		{
 			name:     "path: descending rel file",
 			cwd:      "/working/dir",
 			filename: "file",
-			expected: "/working/dir/file",
+			expected: filepath.FromSlash("/working/dir/file"),
 		},
 		{
 			name:     "path: ascending rel file 1",
 			cwd:      "/working/dir",
 			filename: "../file",
-			expected: "/working/dir/file",
+			expected: filepath.FromSlash("/working/dir/file"),
 		},
 		{
 			name:     "path: ascending rel file 2",
 			cwd:      "/working/dir",
 			filename: "../../file",
-			expected: "/working/dir/file",
+			expected: filepath.FromSlash("/working/dir/file"),
 		},
 		{
 			name:     "path: ascending rel file 3",
 			cwd:      "/working/dir",
 			filename: "/../../file",
-			expected: "/working/dir/file",
+			expected: filepath.FromSlash("/working/dir/file"),
 		},
 		{
 			name:     "path: abs file within cwd",
-			cwd:      "/working/dir",
-			filename: "/working/dir/abs-file",
-			expected: "/working/dir/abs-file",
+			cwd:      filepath.FromSlash("/working/dir"),
+			filename: filepath.FromSlash("/working/dir/abs-file"),
+			expected: filepath.FromSlash("/working/dir/abs-file"),
 		},
 		{
 			name:     "path: abs file within cwd",
 			cwd:      "/working/dir",
 			filename: "/outside/dir/abs-file",
-			expected: "/working/dir/outside/dir/abs-file",
+			expected: filepath.FromSlash("/working/dir/outside/dir/abs-file"),
 		},
 		{
 			name:            "abs symlink: within cwd w abs descending target",
@@ -964,7 +963,7 @@ func TestAbs(t *testing.T) {
 			},
 		},
 		{
-			name:            "abs symlink within cwd w rel ascending target",
+			name:            "abs symlink: within cwd w rel ascending target",
 			filename:        "ln-rel-cwd-up",
 			makeAbs:         true,
 			expected:        "outside-cwd",
@@ -1054,10 +1053,12 @@ func TestReadDir(t *testing.T) {
 	f, err := os.Create(filepath.Join(dir, "file1"))
 	g.Expect(err).ToNot(gomega.HaveOccurred())
 	g.Expect(f).ToNot(gomega.BeNil())
+	g.Expect(f.Close()).To(gomega.Succeed())
 
 	f, err = os.Create(filepath.Join(dir, "file2"))
 	g.Expect(err).ToNot(gomega.HaveOccurred())
 	g.Expect(f).ToNot(gomega.BeNil())
+	g.Expect(f.Close()).To(gomega.Succeed())
 
 	dirs, err := fs.ReadDir(dir)
 	g.Expect(err).ToNot(gomega.HaveOccurred())
@@ -1072,7 +1073,7 @@ func TestReadDir(t *testing.T) {
 	os.Symlink("/some/path/outside/cwd", filepath.Join(dir, "symlink"))
 	dirs, err = fs.ReadDir("symlink")
 	g.Expect(err).To(gomega.HaveOccurred())
-	g.Expect(err.Error()).To(gomega.ContainSubstring(dir + "/some/path/outside/cwd: no such file or directory"))
+	g.Expect(err.Error()).To(gomega.ContainSubstring(notFoundError()))
 	g.Expect(dirs).To(gomega.BeNil())
 }
 
@@ -1084,7 +1085,7 @@ func TestMkdirAll(t *testing.T) {
 	targetAbs := filepath.Join(cwd, target)
 	fs := New(cwd)
 
-	// Even if CWD is changed outside of fs the instance,
+	// Even if CWD is changed outside of the fs instance,
 	// the current working dir must still be observed.
 	err := os.Chdir(os.TempDir())
 	g.Expect(err).ToNot(gomega.HaveOccurred())
@@ -1096,12 +1097,21 @@ func TestMkdirAll(t *testing.T) {
 	g.Expect(err).ToNot(gomega.HaveOccurred())
 	g.Expect(fi).ToNot(gomega.BeNil())
 
-	os.Mkdir(filepath.Join(root, "outside"), 0o700)
-	os.Symlink(filepath.Join(root, "outside"), filepath.Join(cwd, "symlink"))
-	err = fs.MkdirAll(filepath.Join(cwd, "symlink/new-dir"), 0o700)
+	err = os.Mkdir(filepath.Join(root, "outside"), 0o700)
+	g.Expect(err).ToNot(gomega.HaveOccurred())
+	err = os.Symlink(filepath.Join(root, "outside"), filepath.Join(cwd, "symlink"))
 	g.Expect(err).ToNot(gomega.HaveOccurred())
 
-	mustExist(filepath.Join(cwd, filepath.Join(cwd, "../outside/new-dir")))
+	err = fs.MkdirAll(filepath.Join(cwd, "symlink", "new-dir"), 0o700)
+	g.Expect(err).ToNot(gomega.HaveOccurred())
+
+	// For windows, the volume name must be removed from the path or
+	// it will lead to an invalid path.
+	if vol := filepath.VolumeName(root); vol != "" {
+		root = root[len(vol):]
+	}
+
+	mustExist(filepath.Join(cwd, root, "outside", "new-dir"))
 }
 
 func TestRename(t *testing.T) {
@@ -1110,15 +1120,16 @@ func TestRename(t *testing.T) {
 	fs := New(dir)
 
 	oldFile := "old-file"
-	newFile := "newdir/newfile"
+	newFile := filepath.Join("newdir", "newfile")
 
 	// Even if CWD is changed outside of fs the instance,
 	// the current working dir must still be observed.
 	err := os.Chdir(os.TempDir())
 	g.Expect(err).ToNot(gomega.HaveOccurred())
 
-	_, err = fs.Create(oldFile)
+	f, err := fs.Create(oldFile)
 	g.Expect(err).ToNot(gomega.HaveOccurred())
+	g.Expect(f.Close()).To(gomega.Succeed())
 
 	err = fs.Rename(oldFile, newFile)
 	g.Expect(err).ToNot(gomega.HaveOccurred())
@@ -1127,18 +1138,27 @@ func TestRename(t *testing.T) {
 	g.Expect(err).ToNot(gomega.HaveOccurred())
 	g.Expect(fi).ToNot(gomega.BeNil())
 
-	err = fs.Rename("/tmp/outside/cwd/file1", newFile)
+	err = fs.Rename(filepath.FromSlash("/tmp/outside/cwd/file1"), newFile)
 	g.Expect(err).To(gomega.HaveOccurred())
-	g.Expect(err.Error()).To(gomega.ContainSubstring("newdir/newfile: no such file or directory"))
+	g.Expect(err.Error()).To(gomega.ContainSubstring(notFoundError()))
 
-	err = fs.Rename(oldFile, "/tmp/outside/cwd/file2")
+	err = fs.Rename(oldFile, filepath.FromSlash("/tmp/outside/cwd/file2"))
 	g.Expect(err).To(gomega.HaveOccurred())
-	g.Expect(err.Error()).To(gomega.ContainSubstring("outside/cwd/file2: no such file or directory"))
+	g.Expect(err.Error()).To(gomega.ContainSubstring(notFoundError()))
 }
 
 func mustExist(filename string) {
 	fi, err := os.Stat(filename)
 	if err != nil || fi == nil {
 		panic(fmt.Sprintf("file %s should exist", filename))
+	}
+}
+
+func notFoundError() string {
+	switch runtime.GOOS {
+	case "windows":
+		return "The system cannot find the " // {path,file} specified
+	default:
+		return "no such file or directory"
 	}
 }

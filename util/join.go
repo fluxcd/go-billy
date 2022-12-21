@@ -47,7 +47,13 @@ func SecureJoinVFS(root, unsafePath string, vfs VFS) (string, error) {
 	n := 0
 	for unsafePath != "" {
 		if n > 255 {
-			return "", &os.PathError{Op: "SecureJoin", Path: root + "/" + unsafePath, Err: syscall.ELOOP}
+			return "", &os.PathError{Op: "SecureJoin", Path: root + string(filepath.Separator) + unsafePath, Err: syscall.ELOOP}
+		}
+
+		// The volume name must be stripped to avoid invalid paths.
+		// Only the root path should contain the volume name.
+		if v := filepath.VolumeName(unsafePath); v != "" {
+			unsafePath = unsafePath[len(v):]
 		}
 
 		// Next path component, p.
@@ -93,10 +99,8 @@ func SecureJoinVFS(root, unsafePath string, vfs VFS) (string, error) {
 		}
 		// Absolute symlinks reset any work we've already done.
 		if filepath.IsAbs(dest) {
-			// Change from upstream, to avoid duplicating root dir.
-			if !fi.IsDir() && strings.HasPrefix(dest, root+string(filepath.Separator)) {
-				return filepath.Clean(dest), nil
-			}
+			// Avoid duplicating root dir due to abs symlinks.
+			dest = strings.Replace(dest, root+string(filepath.Separator), string(filepath.Separator), 1)
 			path.Reset()
 		}
 		unsafePath = dest + string(filepath.Separator) + unsafePath
